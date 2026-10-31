@@ -1,4 +1,4 @@
-﻿#include "calculator.h"
+#include "calculator.h"
 
 #include <QGridLayout>
 #include <QKeyEvent>
@@ -68,7 +68,7 @@ void Calculator::buildUi()
             &QPushButton::clicked, this, &Calculator::handleClear);
     connect(addButton(tr("CE"), 0, 1, QStringLiteral("buttonFunction")),
             &QPushButton::clicked, this, &Calculator::handleClearEntry);
-    connect(addButton(QStringLiteral("\u232B"), 0, 2, QStringLiteral("buttonFunction")),
+    connect(addButton(QStringLiteral("\u2190"), 0, 2, QStringLiteral("buttonFunction")),
             &QPushButton::clicked, this, &Calculator::handleBackspace);
     connect(addButton(QStringLiteral("/"), 0, 3, QStringLiteral("buttonOperator")),
             &QPushButton::clicked, this, [this] { handleOperator(Operator::Divide); });
