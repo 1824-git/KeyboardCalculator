@@ -5,7 +5,9 @@
 #include <QWidget>
 
 class QGridLayout;
+class QKeyEvent;
 class QLabel;
+class QShowEvent;
 
 class Calculator : public QWidget
 {
@@ -24,8 +26,12 @@ public:
     explicit Calculator(QWidget *parent = nullptr);
     ~Calculator() override;
 
+protected:
+    void keyPressEvent(QKeyEvent *event) override;
+    void showEvent(QShowEvent *event) override;
+
 private slots:
-    // ---- 鼠标点击触发的槽函数 ----
+    // ---- 鼠标点击与键盘输入共用的同一套槽函数 ----
     void handleDigit(const QString &digit);
     void handleDot();
     void handleOperator(Calculator::Operator op);

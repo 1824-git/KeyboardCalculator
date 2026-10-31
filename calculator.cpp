@@ -1,8 +1,10 @@
 ﻿#include "calculator.h"
 
 #include <QGridLayout>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QPushButton>
+#include <QShowEvent>
 #include <QSizePolicy>
 #include <QVBoxLayout>
 
@@ -171,6 +173,62 @@ void Calculator::applyStyles()
             background-color: #245bd0;
         }
     )"));
+}
+
+void Calculator::keyPressEvent(QKeyEvent *event)
+{
+    const int key = event->key();
+
+    // 0-9（主键盘与小键盘都有效）
+    if (key >= Qt::Key_0 && key <= Qt::Key_9) {
+        handleDigit(QString::number(key - Qt::Key_0));
+        event->accept();
+        return;
+    }
+
+    switch (key) {
+    case Qt::Key_Plus:
+        handleOperator(Operator::Add);
+        break;
+    case Qt::Key_Minus:
+        handleOperator(Operator::Subtract);
+        break;
+    case Qt::Key_Asterisk:
+        handleOperator(Operator::Multiply);
+        break;
+    case Qt::Key_Slash:
+        handleOperator(Operator::Divide);
+        break;
+    case Qt::Key_Period:
+    case Qt::Key_Comma:  // 小键盘小数点、部分布局下逗号当小数点用
+        handleDot();
+        break;
+    case Qt::Key_Return:
+    case Qt::Key_Enter:
+    case Qt::Key_Equal:
+        handleEqual();
+        break;
+    case Qt::Key_Backspace:
+        handleBackspace();
+        break;
+    case Qt::Key_Escape:
+        handleClear();
+        break;
+    case Qt::Key_Delete:
+        handleClearEntry();
+        break;
+    default:
+        QWidget::keyPressEvent(event);
+        return;
+    }
+
+    event->accept();
+}
+
+void Calculator::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+    setFocus(Qt::OtherFocusReason);  // 确保窗口拿到键盘焦点
 }
 
 // ---------------------------------------------------------------- 输入槽函数
