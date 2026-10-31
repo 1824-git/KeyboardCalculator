@@ -177,66 +177,273 @@ void Calculator::applyStyles()
 
 void Calculator::handleDigit(const QString &digit)
 {
+    // 错误状态或结果已显示：数字键开始一次全新的计算
+    if (m_error || m_resultShown)
+        resetAll();
+
+    if (m_waitingForSecond) {
+        m_currentInput = digit;
+        m_waitingForSecond = false;
+    } else if (m_currentInput == QStringLiteral("0")) {
+        m_currentInput = digit;
+    } else if (m_currentInput == QStringLiteral("-0")) {
+        m_currentInput = QStringLiteral("-") + digit;
+    } else {
+        m_currentInput += digit;
+    }
+
+    updateExpressionWhileTyping();
+    updateDisplay();
 }
 
 void Calculator::handleDot()
 {
+    if (m_error || m_resultShown)
+        resetAll();
+
+    if (m_waitingForSecond) {
+        m_currentInput = QStringLiteral("0.");
+        m_waitingForSecond = false;
+    } else if (!m_currentInput.contains(QLatin1Char('.'))) {
+        m_currentInput += QLatin1Char('.');
+    }
+    // 已含小数点时直接忽略，保证 1..2 只保留一个点
+
+    updateExpressionWhileTyping();
+    updateDisplay();
 }
 
 void Calculator::handleOperator(Operator op)
 {
+    if (m_error)
+        return;  // 错误状态下先按 C / CE 或直接输入数字恢复
+
+    if (m_pendingOp == Operator::None) {
+        // 第一次按运算符：把当前输入记为第一操作数
+        m_firstOperand = m_currentInput.toDouble();
+        m_pendingOp = op;
+        m_waitingForSecond = true;
+        m_resultShown = false;
+    } else if (m_waitingForSecond) {
+        // 连续运算符：只替换，不做运算（2++3 -> 2+3）
+        m_pendingOp = op;
+    } else {
+        // 连续运算：先算出前面的结果（2+3+4，按第二个 + 时先算 2+3）
+        bool ok = true;
+        const double result =
+            applyOperator(m_firstOperand, m_currentInput.toDouble(), m_pendingOp, &ok);
+        if (!ok) {
+            enterErrorState(formatNumber(m_firstOperand) + QLatin1Char(' ')
+                            + opText(m_pendingOp) + QLatin1Char(' ')
+                            + formatNumber(m_currentInput.toDouble()) + QStringLiteral(" ="));
+            return;
+        }
+        m_firstOperand = result;
+        m_currentInput = formatNumber(result);
+        m_pendingOp = op;
+        m_waitingForSecond = true;
+        m_resultShown = false;
+    }
+
+    updateExpressionWhileTyping();
+    updateDisplay();
 }
 
 void Calculator::handleEqual()
 {
+    if (m_error)
+        return;
+
+    if (m_pendingOp == Operator::None) {
+        // 没有待执行的运算：当前输入就是结果
+        m_expressionText = formatNumber(m_currentInput.toDouble()) + QStringLiteral(" =");
+        m_currentInput = formatNumber(m_currentInput.toDouble());
+        m_resultShown = true;
+        updateDisplay();
+        return;
+    }
+
+    // 例如 2 +=，用第一操作数与自身运算（与常见计算器一致）
+    const double second = m_waitingForSecond ? m_firstOperand : m_currentInput.toDouble();
+    const QString expression =
+        formatNumber(m_firstOperand) + QLatin1Char(' ') + opText(m_pendingOp)
+        + QLatin1Char(' ') + formatNumber(second) + QStringLiteral(" =");
+
+    bool ok = true;
+    const double result = applyOperator(m_firstOperand, second, m_pendingOp, &ok);
+    if (!ok) {
+        enterErrorState(expression);
+        return;
+    }
+
+    m_expressionText = expression;
+    m_currentInput = formatNumber(result);
+    m_firstOperand = result;
+    m_pendingOp = Operator::None;
+    m_waitingForSecond = false;
+    m_resultShown = true;
+    m_error = false;
+    updateDisplay();
 }
 
 void Calculator::handleBackspace()
 {
+    if (m_error)
+        return;
+
+    if (m_resultShown) {
+        resetAll();  // 结果状态下退格 -> 重新开始输入
+        return;
+    }
+
+    if (m_waitingForSecond)
+        return;  // 还没有输入第二操作数
+
+    if (!m_currentInput.isEmpty())
+        m_currentInput.chop(1);
+
+    if (m_currentInput.isEmpty() || m_currentInput == QStringLiteral("-"))
+        m_currentInput = QStringLiteral("0");
+
+    updateExpressionWhileTyping();
+    updateDisplay();
 }
 
 void Calculator::handleClear()
 {
+    resetAll();
 }
 
 void Calculator::handleClearEntry()
 {
+    if (m_error || m_resultShown) {
+        resetAll();
+        return;
+    }
+
+    m_currentInput = QStringLiteral("0");
+    updateExpressionWhileTyping();
+    updateDisplay();
 }
 
 void Calculator::handleToggleSign()
 {
+    if (m_error)
+        return;
+
+    if (m_resultShown) {
+        // 以结果作为新的输入继续编辑
+        m_resultShown = false;
+        m_pendingOp = Operator::None;
+        m_waitingForSecond = false;
+        m_firstOperand = 0.0;
+        m_expressionText.clear();
+    } else if (m_waitingForSecond) {
+        m_currentInput = QStringLiteral("0");
+        m_waitingForSecond = false;
+    }
+
+    if (m_currentInput.startsWith(QLatin1Char('-')))
+        m_currentInput.remove(0, 1);
+    else
+        m_currentInput.prepend(QLatin1Char('-'));
+
+    if (m_currentInput == QStringLiteral("-"))
+        m_currentInput = QStringLiteral("0");
+
+    updateExpressionWhileTyping();
+    updateDisplay();
 }
 
 // ---------------------------------------------------------------- 内部辅助
 
 void Calculator::resetAll()
 {
+    m_currentInput = QStringLiteral("0");
+    m_firstOperand = 0.0;
+    m_pendingOp = Operator::None;
+    m_waitingForSecond = false;
+    m_resultShown = false;
+    m_error = false;
+    m_expressionText.clear();
+    updateDisplay();
 }
 
 void Calculator::updateDisplay()
 {
+    labelExpression->setText(m_expressionText);
+    labelResult->setText(m_error ? tr("除数为0") : m_currentInput);
 }
 
 void Calculator::updateExpressionWhileTyping()
 {
+    if (m_pendingOp == Operator::None) {
+        m_expressionText.clear();
+    } else if (m_waitingForSecond) {
+        m_expressionText =
+            formatNumber(m_firstOperand) + QLatin1Char(' ') + opText(m_pendingOp);
+    } else {
+        m_expressionText = formatNumber(m_firstOperand) + QLatin1Char(' ')
+                           + opText(m_pendingOp) + QLatin1Char(' ') + m_currentInput;
+    }
 }
 
 void Calculator::enterErrorState(const QString &expressionText)
 {
+    m_error = true;
+    m_pendingOp = Operator::None;
+    m_waitingForSecond = false;
+    m_resultShown = false;
+    m_expressionText = expressionText;
+
+    labelExpression->setText(m_expressionText);
+    labelResult->setText(tr("除数为0"));
 }
 
 double Calculator::applyOperator(double lhs, double rhs, Operator op, bool *ok)
 {
     *ok = true;
-    return 0.0;
+    switch (op) {
+    case Operator::Add:
+        return lhs + rhs;
+    case Operator::Subtract:
+        return lhs - rhs;
+    case Operator::Multiply:
+        return lhs * rhs;
+    case Operator::Divide:
+        if (rhs == 0.0) {
+            *ok = false;
+            return 0.0;
+        }
+        return lhs / rhs;
+    case Operator::None:
+        break;
+    }
+    return rhs;
 }
 
 QString Calculator::formatNumber(double value)
 {
-    return QString();
+    if (!std::isfinite(value))
+        return QStringLiteral("0");
+    if (value == 0.0)
+        return QStringLiteral("0");
+    return QString::number(value, 'g', 15);
 }
 
 QString Calculator::opText(Operator op)
 {
+    switch (op) {
+    case Operator::Add:
+        return QStringLiteral("+");
+    case Operator::Subtract:
+        return QStringLiteral("-");
+    case Operator::Multiply:
+        return QStringLiteral("*");
+    case Operator::Divide:
+        return QStringLiteral("/");
+    case Operator::None:
+        break;
+    }
     return QString();
 }
